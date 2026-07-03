@@ -7,7 +7,7 @@ import LiepaCore
 /// operations (set default quality, delete, download) live in the **Actions
 /// rotor** (`accessibilityActions`). A visual menu mirrors them for sighted use.
 struct VoicesView: View {
-    @StateObject private var downloader = VoiceDownloader()
+    @ObservedObject private var downloader = VoiceDownloader.shared
 
     var body: some View {
         List {

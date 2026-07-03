@@ -16,10 +16,16 @@ struct VoiceVariant: Identifiable, Hashable {
     }
 }
 
-/// Downloads voice bases (.rar) from the LIEPA server, extracts them with the
-/// vendored unrar into the shared App Group, and manages installed qualities.
+/// Downloads voice bases (.rar) from the LIEPA server via a **background**
+/// URLSession (downloads continue when the app is suspended/closed), extracts
+/// them with the vendored unrar into the shared App Group, and manages
+/// installed qualities.
 @MainActor
 final class VoiceDownloader: NSObject, ObservableObject {
+    /// Shared instance — a background session must live for the whole app so it
+    /// can receive completion events after a relaunch.
+    static let shared = VoiceDownloader()
+
     enum State: Equatable {
         case idle
         case downloading(Double)
@@ -27,39 +33,42 @@ final class VoiceDownloader: NSObject, ObservableObject {
         case failed(String)
     }
 
-    /// Voices+variants parsed from the server index.
     @Published var variants: [VoiceVariant] = []
-    /// In-flight download/extract state, keyed by voice.
     @Published var states: [LiepaVoice: State] = [:]
-    /// Bumped whenever installed state changes, to refresh views.
     @Published var revision = 0
     @Published var indexError: String?
 
+    /// Completion handler handed to us by the system when the app is relaunched
+    /// to finish background transfers.
+    var backgroundCompletion: (() -> Void)?
+
     private let indexURL = "https://klevas.mif.vu.lt/~pijus/android/Garsu_bazes/"
+    private static let sessionID = "lt.liepa.tts.voicedownload"
 
-    private var tasks: [LiepaVoice: URLSessionDownloadTask] = [:]
-    private var observations: [LiepaVoice: NSKeyValueObservation] = [:]
-    private var pendingQuality: [LiepaVoice: Int] = [:]
-    private var lastAnnounced: [LiepaVoice: Int] = [:]
-    private lazy var session = URLSession(configuration: .default,
-                                          delegate: self, delegateQueue: nil)
+    private var session: URLSession!
 
-    override init() {
+    private override init() {
         super.init()
+        let cfg = URLSessionConfiguration.background(withIdentifier: Self.sessionID)
+        cfg.sessionSendsLaunchEvents = true    // wake the app when done
+        cfg.isDiscretionary = false            // start promptly
+        cfg.allowsCellularAccess = true
+        session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
         for v in LiepaVoice.allCases { states[v] = .idle }
+        // Re-attach state for any transfers still running from a previous launch.
+        session.getAllTasks { tasks in
+            Task { @MainActor in
+                for t in tasks {
+                    if let v = Self.voice(fromTaskDescription: t.taskDescription),
+                       t.state == .running {
+                        self.states[v] = .downloading(0)
+                    }
+                }
+            }
+        }
     }
 
-    /// Speak download progress through VoiceOver at 25% milestones.
-    private func announceProgress(_ voice: LiepaVoice, _ fraction: Double) {
-        guard UIAccessibility.isVoiceOverRunning else { return }
-        let milestone = Int(fraction * 4) * 25          // 0,25,50,75,100
-        guard milestone > 0, lastAnnounced[voice] != milestone else { return }
-        lastAnnounced[voice] = milestone
-        UIAccessibility.post(notification: .announcement,
-                             argument: "\(voice.displayName): atsisiųsta \(milestone) procentų")
-    }
-
-    // MARK: installed queries (pass-through to VoiceManager)
+    // MARK: installed queries (pass-through)
 
     func installedQualities(_ v: LiepaVoice) -> [Int] { VoiceManager.installedQualities(v) }
     func defaultQuality(_ v: LiepaVoice) -> Int? { VoiceManager.defaultQuality(v) }
@@ -109,29 +118,33 @@ final class VoiceDownloader: NSObject, ObservableObject {
         return Int64(num * mult)
     }
 
+    // MARK: task description helpers ("<Name>|<quality>")
+
+    nonisolated static func voice(fromTaskDescription d: String?) -> LiepaVoice? {
+        guard let name = d?.split(separator: "|").first else { return nil }
+        return LiepaVoice.allCases.first { $0.folderName == name }
+    }
+    nonisolated static func quality(fromTaskDescription d: String?) -> Int? {
+        guard let parts = d?.split(separator: "|"), parts.count == 2 else { return nil }
+        return Int(parts[1])
+    }
+
     // MARK: management
 
     func download(_ variant: VoiceVariant) {
         let voice = variant.voice
         guard let url = URL(string: indexURL + variant.filename) else { return }
-        if case .downloading = states[voice] { return }   // one download per voice at a time
-        pendingQuality[voice] = variant.quality
-        lastAnnounced[voice] = 0
+        if case .downloading = states[voice] { return }
         states[voice] = .downloading(0)
         let task = session.downloadTask(with: url)
         task.taskDescription = "\(voice.folderName)|\(variant.quality)"
-        tasks[voice] = task
-        observations[voice] = task.progress.observe(\.fractionCompleted) { [weak self] p, _ in
-            Task { @MainActor in
-                self?.states[voice] = .downloading(p.fractionCompleted)
-                self?.announceProgress(voice, p.fractionCompleted)
-            }
-        }
         task.resume()
     }
 
     func cancel(_ voice: LiepaVoice) {
-        tasks[voice]?.cancel(); tasks[voice] = nil
+        session.getAllTasks { tasks in
+            for t in tasks where Self.voice(fromTaskDescription: t.taskDescription) == voice { t.cancel() }
+        }
         states[voice] = .idle
     }
 
@@ -186,12 +199,22 @@ final class VoiceDownloader: NSObject, ObservableObject {
 }
 
 extension VoiceDownloader: URLSessionDownloadDelegate {
+    // progress
+    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                                didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
+                                totalBytesExpectedToWrite: Int64) {
+        guard totalBytesExpectedToWrite > 0,
+              let voice = Self.voice(fromTaskDescription: downloadTask.taskDescription) else { return }
+        let p = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        Task { @MainActor in self.states[voice] = .downloading(p) }
+    }
+
+    // download finished → extract + install (runs even when relaunched in background)
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                                 didFinishDownloadingTo location: URL) {
-        let parts = (downloadTask.taskDescription ?? "").split(separator: "|")
-        guard parts.count == 2,
-              let voice = LiepaVoice.allCases.first(where: { $0.folderName == parts[0] }),
-              let quality = Int(parts[1]) else { return }
+        guard let voice = Self.voice(fromTaskDescription: downloadTask.taskDescription),
+              let quality = Self.quality(fromTaskDescription: downloadTask.taskDescription) else { return }
+        // The temp file is deleted when this returns — move it out first.
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".rar")
         try? FileManager.default.moveItem(at: location, to: tmp)
         Task { @MainActor in self.states[voice] = .extracting }
@@ -200,7 +223,7 @@ extension VoiceDownloader: URLSessionDownloadDelegate {
             try? FileManager.default.removeItem(at: tmp)
             Task { @MainActor in
                 self.states[voice] = .idle
-                VoiceManager.ensureDefault(voice)      // first quality becomes default
+                VoiceManager.ensureDefault(voice)
                 self.revision += 1
                 AVSpeechSynthesisProviderVoice.updateSpeechVoices()
             }
@@ -212,12 +235,20 @@ extension VoiceDownloader: URLSessionDownloadDelegate {
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask,
                                 didCompleteWithError error: Error?) {
-        guard let error, let voice = LiepaVoice.allCases.first(where: {
-            (task.taskDescription ?? "").hasPrefix($0.folderName)
-        }) else { return }
+        guard let error, let voice = Self.voice(fromTaskDescription: task.taskDescription) else { return }
+        // .cancelled is user-initiated; ignore.
+        if (error as NSError).code == NSURLErrorCancelled { return }
         Task { @MainActor in
             if case .extracting = self.states[voice] { return }
             self.states[voice] = .failed(error.localizedDescription)
+        }
+    }
+
+    // all background events delivered → let the system suspend us again
+    nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        Task { @MainActor in
+            self.backgroundCompletion?()
+            self.backgroundCompletion = nil
         }
     }
 }
