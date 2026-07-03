@@ -1194,6 +1194,7 @@
 					"$(SRCROOT)/Sources/Unrar/include",
 				);
 				INFOPLIST_KEY_CFBundleDisplayName = Liepa;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1274,6 +1275,7 @@
 					"$(SRCROOT)/Sources/Unrar/include",
 				);
 				INFOPLIST_KEY_CFBundleDisplayName = Liepa;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
