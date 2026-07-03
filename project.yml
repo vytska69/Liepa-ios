@@ -1,0 +1,164 @@
+name: Liepa
+options:
+  bundleIdPrefix: lt.liepa
+  deploymentTarget:
+    iOS: "16.0"
+  developmentLanguage: lt
+  createIntermediateGroups: true
+
+schemes:
+  LiepaTTS:
+    build:
+      targets:
+        LiepaTTS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+    CLANG_CXX_LIBRARY: "libc++"
+    GCC_C_LANGUAGE_STANDARD: "gnu11"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: "T6SRYJ2877"
+
+targets:
+
+  LiepaCore:
+    type: framework
+    platform: iOS
+    sources:
+      - path: Sources/LiepaCore/engine
+        headerVisibility: project
+      - path: Sources/LiepaCore/LiepaSynth.swift
+      - path: Sources/LiepaCore/VoiceManager.swift
+      - path: Sources/LiepaCore/include
+        headerVisibility: public
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: lt.liepa.LiepaCore
+        GENERATE_INFOPLIST_FILE: "YES"
+        DEFINES_MODULE: "YES"
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/Sources/LiepaCore/engine"
+          - "$(SRCROOT)/Sources/LiepaCore/include"
+        # The LithUSS engine is legacy-style C++ in Windows-1257 source; keep raw bytes and
+        # silence its (many) legacy warnings.
+        GCC_WARN_INHIBIT_ALL_WARNINGS: "YES"
+        OTHER_CPLUSPLUSFLAGS: "-Wno-invalid-source-encoding -Wno-writable-strings -w"
+        OTHER_CFLAGS: "-Wno-invalid-source-encoding -w"
+
+  # Vendored unrar (rarlab UnRARSrc) built as a static lib for .rar extraction.
+  # The 32 unity-build .cpp files (#included into others) are excluded.
+  Unrar:
+    type: library.static
+    platform: iOS
+    sources:
+      - path: Sources/Unrar/unrar
+        excludes:
+          - "arccmt.cpp"
+          - "blake2s_sse.cpp"
+          - "blake2sp.cpp"
+          - "cmdfilter.cpp"
+          - "cmdmix.cpp"
+          - "coder.cpp"
+          - "crypt1.cpp"
+          - "crypt2.cpp"
+          - "crypt3.cpp"
+          - "crypt5.cpp"
+          - "hardlinks.cpp"
+          - "isnt.cpp"
+          - "log.cpp"
+          - "model.cpp"
+          - "rarpch.cpp"
+          - "recvol.cpp"
+          - "recvol3.cpp"
+          - "recvol5.cpp"
+          - "rs.cpp"
+          - "suballoc.cpp"
+          - "threadmisc.cpp"
+          - "uicommon.cpp"
+          - "uiconsole.cpp"
+          - "uisilent.cpp"
+          - "ulinks.cpp"
+          - "unpack15.cpp"
+          - "unpack20.cpp"
+          - "unpack30.cpp"
+          - "unpack50.cpp"
+          - "unpack50frag.cpp"
+          - "unpack50mt.cpp"
+          - "unpackinline.cpp"
+          - "uowners.cpp"
+          - "win32acl.cpp"
+          - "win32lnk.cpp"
+          - "win32stm.cpp"
+      - path: Sources/Unrar/liepa_unrar.cpp
+      - path: Sources/Unrar/include
+        headerVisibility: public
+    settings:
+      base:
+        PRODUCT_NAME: Unrar
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - "RARDLL=1"
+          - "_FILE_OFFSET_BITS=64"
+          - "_LARGEFILE_SOURCE=1"
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/Sources/Unrar/unrar"
+          - "$(SRCROOT)/Sources/Unrar/include"
+        GCC_WARN_INHIBIT_ALL_WARNINGS: "YES"
+        OTHER_CPLUSPLUSFLAGS: "-w -Wno-logical-op-parentheses -Wno-switch -Wno-dangling-else"
+
+  LiepaTTS:
+    type: application
+    platform: iOS
+    sources:
+      - Sources/App
+      - path: Resources/liepa-data
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: LiepaCore
+        embed: true
+      - target: LiepaSpeechProvider
+        embed: true
+      - target: Unrar
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: lt.liepa.tts
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: "Liepa"
+        CODE_SIGN_ENTITLEMENTS: Sources/App/App.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/App/Liepa-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/Sources/Unrar/include"
+        OTHER_LDFLAGS:
+          - "-lc++"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  LiepaSpeechProvider:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Sources/SpeechProvider
+    dependencies:
+      - target: LiepaCore
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: lt.liepa.tts.SpeechProvider
+        INFOPLIST_FILE: Sources/SpeechProvider/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/SpeechProvider/SpeechProvider.entitlements
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_KEY_CFBundleDisplayName: "Liepa"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"

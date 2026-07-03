@@ -1,0 +1,18 @@
+# Large voice bases & downloaded assets (not committed)
+Resources/liepa-data/*/db.raw
+assets/
+samples/
+re/
+
+# Xcode / build
+*.xcodeproj/xcuserdata/
+DerivedData/
+build/
+.DS_Store
+
+build-device/
+build-mac/
+build-rel/
+*.xcscmblueprint
+*.xcuserstate
+.claude/
