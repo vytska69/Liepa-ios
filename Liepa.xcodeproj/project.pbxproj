@@ -1146,6 +1146,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				OTHER_CFLAGS = "-Wno-invalid-source-encoding -w";
 				OTHER_CPLUSPLUSFLAGS = "-Wno-invalid-source-encoding -Wno-writable-strings -w";
 				PRODUCT_BUNDLE_IDENTIFIER = lt.liepa.LiepaCore;
@@ -1196,6 +1197,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Liepa;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1233,6 +1236,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				OTHER_CFLAGS = "-Wno-invalid-source-encoding -w";
 				OTHER_CPLUSPLUSFLAGS = "-Wno-invalid-source-encoding -Wno-writable-strings -w";
 				PRODUCT_BUNDLE_IDENTIFIER = lt.liepa.LiepaCore;
@@ -1277,6 +1281,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Liepa;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
