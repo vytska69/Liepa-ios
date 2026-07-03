@@ -62,6 +62,7 @@
 		48CC13E74BD22F826A5315D3 /* LiepaSpeechProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 99A21ECB997956EC8359549D /* LiepaSpeechProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4A079A08702986C6E9EA56D1 /* rs16.hpp in CopyFiles */ = {isa = PBXBuildFile; fileRef = E46BEE2F6B85637E068A33AE /* rs16.hpp */; };
 		4A8AA9744CF2B1191D82BB22 /* rs.hpp in CopyFiles */ = {isa = PBXBuildFile; fileRef = AE58969EE5BF3A655AB662F0 /* rs.hpp */; };
+		4C25C08DE56290970891AA14 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 82D20063160DD47D1E6F29BE /* Assets.xcassets */; };
 		4CE411D806F744D792E37FA7 /* sha256.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9F859B59EE9EC9266C9F09FB /* sha256.cpp */; };
 		4D6FFFE374C4F7867D2444E5 /* filcreat.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D9AA1187A04EB2D748B3F703 /* filcreat.cpp */; };
 		5216B5DB1D30B8075509D9A6 /* consio.hpp in CopyFiles */ = {isa = PBXBuildFile; fileRef = 49721303BA31F612D818304A /* consio.hpp */; };
@@ -394,6 +395,7 @@
 		795E9AF486CBC9EC72021DE9 /* rijndael.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = rijndael.cpp; sourceTree = "<group>"; };
 		8001F9792C71A5E77E78019B /* encname.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = encname.hpp; sourceTree = "<group>"; };
 		80DD1AEB263277CAA93F64E8 /* LiepaTTS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LiepaTTS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		82D20063160DD47D1E6F29BE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		831CA50EA8E69FA68AA76007 /* UnitSelection.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = UnitSelection.cpp; sourceTree = "<group>"; };
 		862BC70D4B11583BA432498E /* VoicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicesView.swift; sourceTree = "<group>"; };
 		89455FC51171A52356FEA643 /* stringWithLetterPosition.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = stringWithLetterPosition.h; sourceTree = "<group>"; };
@@ -759,6 +761,7 @@
 			isa = PBXGroup;
 			children = (
 				3EC77E335BF10E2E3B9E143B /* App.entitlements */,
+				82D20063160DD47D1E6F29BE /* Assets.xcassets */,
 				3AAE25D4B4A1D2C2008FE757 /* ContentView.swift */,
 				D0A765A0319977F567F4E70D /* Liepa-Bridging-Header.h */,
 				8F459AC296AD4171BCBDC2BC /* LiepaApp.swift */,
@@ -939,6 +942,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4C25C08DE56290970891AA14 /* Assets.xcassets in Resources */,
 				729548099032DADD3491035E /* liepa-data in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

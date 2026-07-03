@@ -134,6 +134,7 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: "Liepa"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Sources/App/App.entitlements
         SWIFT_OBJC_BRIDGING_HEADER: Sources/App/Liepa-Bridging-Header.h
         HEADER_SEARCH_PATHS:
