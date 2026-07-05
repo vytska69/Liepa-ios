@@ -61,12 +61,23 @@ public final class LiepaSynthAudioUnit: AVSpeechSynthesisProviderAudioUnit {
 
     public override func synthesizeSpeechRequest(_ request: AVSpeechSynthesisProviderRequest) {
         let ssml = request.ssmlRepresentation
-        let text = Self.plainText(fromSSML: ssml)
+        var text = Self.plainText(fromSSML: ssml)
         var voice = Self.voice(for: request.voice.identifier)
         if !VoiceManager.isInstalled(voice) {
             voice = VoiceManager.installedVoices().first ?? voice
         }
-        let modes = currentModes()
+        var modes = currentModes()
+        // VoiceOver character feedback (typing, swiping keyboard keys, deleting a
+        // symbol) sends single characters. Force full punctuation so the engine
+        // names ?, , . ; etc. regardless of the user's Skyryba setting, and for the
+        // few symbols the engine cannot name (-, •, …, →, ≠ …) substitute a name.
+        if text.count == 1
+            || ssml.range(of: "interpret-as=\"characters\"", options: .caseInsensitive) != nil {
+            modes.punctuation = .all
+            if text.count == 1, let ch = text.first, let name = Self.symbolNames[ch] {
+                text = name
+            }
+        }
         let (greitis, tonas) = Self.prosody(fromSSML: ssml)
 
         do {
@@ -174,6 +185,21 @@ public final class LiepaSynthAudioUnit: AVSpeechSynthesisProviderAudioUnit {
     }
 
     /// Minimal SSML → plain text: drop tags, decode the common entities.
+    /// Lithuanian names for single symbols the LithUSS engine cannot voice on its
+    /// own (used only for VoiceOver character feedback). Everything the engine can
+    /// name is left to the engine.
+    static let symbolNames: [Character: String] = [
+        "-": "brūkšnys", "—": "brūkšnys", "–": "brūkšnys", "•": "punktas",
+        "…": "daugtaškis", "‰": "promilė", "’": "apostrofas", "‘": "apostrofas",
+        "‚": "kablelis", "‹": "kampinė kabutė", "›": "kampinė kabutė",
+        "№": "numeris", "™": "prekės ženklas", "′": "štrichas", "″": "dvigubas štrichas",
+        "·": "taškas", "†": "kryželis", "¡": "apverstas šauktukas", "¿": "apverstas klaustukas",
+        "→": "rodyklė", "←": "rodyklė kairėn", "↑": "rodyklė aukštyn", "↓": "rodyklė žemyn",
+        "≠": "nelygu", "≤": "mažiau arba lygu", "≥": "daugiau arba lygu",
+        "∑": "suma", "√": "kvadratinė šaknis", "∞": "begalybė", "≈": "apytiksliai lygu",
+        "π": "pi", "₽": "rublis",
+    ]
+
     static func plainText(fromSSML ssml: String) -> String {
         var s = ssml.replacingOccurrences(of: "<[^>]+>", with: "",
                                           options: .regularExpression)
