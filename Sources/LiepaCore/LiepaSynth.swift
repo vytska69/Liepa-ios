@@ -87,15 +87,16 @@ public final class LiepaSynth: @unchecked Sendable {
     private let bufferMs: Int32
     private var initialized = false
 
-    public init(dataParentPath: String, bufferMs: Int32 = 60_000) throws {
+    /// The single voice this engine instance is bound to. The LithUSS engine can
+    /// load only one voice per process, so the voice is fixed at init.
+    public let loadedVoice: LiepaVoice
+
+    public init(dataParentPath: String, voice: LiepaVoice, bufferMs: Int32 = 60_000) throws {
         self.bufferMs = bufferMs
+        self.loadedVoice = voice
         var rcOut: Liepa_ERROR = EE_INTERNAL_ERROR
         queue.sync {
-            // Preload an INSTALLED voice at init (the engine's built-in default is
-            // "Regina/", which may not be installed → would crash in initLUSS).
-            if let first = VoiceManager.installedVoices().first {
-                (first.folderName + "/").withCString { Liepa_SetVoiceFolder($0) }
-            }
+            (voice.folderName + "/").withCString { Liepa_SetVoiceFolder($0) }
             rcOut = dataParentPath.withCString { cpath in
                 Liepa_Initialize(bufferMs, cpath, 0)
             }
@@ -109,7 +110,6 @@ public final class LiepaSynth: @unchecked Sendable {
     /// - greitis: engine rate, 30…300, 100 = normal (higher = slower).
     /// - tonas:   engine pitch, 100 = normal (higher = higher).
     public func synthesize(_ text: String,
-                           voice: LiepaVoice,
                            greitis: Int32 = 100,
                            tonas: Int32 = 100,
                            modes: LiepaModes = .default) throws -> LiepaPCM {
@@ -122,7 +122,7 @@ public final class LiepaSynth: @unchecked Sendable {
         var result: [Int16]? = nil
         queue.sync {
             utf16.withUnsafeBufferPointer { textPtr in
-                voice.rawValue.withCString { voicePtr in
+                loadedVoice.rawValue.withCString { voicePtr in
                     var outbuf: UnsafeMutablePointer<Int16>? = nil
                     var numSamples: UInt32 = 0
                     let rc = Liepa_Synth(textPtr.baseAddress, utf16.count,

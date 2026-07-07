@@ -39,12 +39,13 @@ extern "C" Liepa_ERROR Liepa_Synth(const void *text, size_t size,
     int greitis, int tonas, int skaiciai, int skyryba, int santrumpos, int emoji,
     const void *voice, short **outbuf1, unsigned int *numsamples1) {
 
-    // Ensure the requested voice is loaded (engine caches by dir).
+    // The LithUSS engine loads exactly ONE voice per process (chosen at
+    // Liepa_Initialize) and cannot switch — initLUSS crashes on a second call.
+    // If a different voice is requested, report it so the caller can relaunch.
     char vdir[1216];
     snprintf(vdir, sizeof(vdir), "%s%s", g_mainDir, mapVoice(voice));
-    if (strcmp(vdir, g_loadedVoiceDir) != 0) {
-        if (initLUSS(g_mainDir, vdir) != NO_ERR) return EE_INTERNAL_ERROR;
-        strncpy(g_loadedVoiceDir, vdir, sizeof(g_loadedVoiceDir)-1);
+    if (g_loadedVoiceDir[0] != 0 && strcmp(vdir, g_loadedVoiceDir) != 0) {
+        return EE_NOT_FOUND;
     }
 
     int textSize = (int)size;                      // number of UTF-16 units
@@ -70,7 +71,8 @@ extern "C" Liepa_ERROR Liepa_Synth(const void *text, size_t size,
 }
 
 extern "C" Liepa_ERROR Liepa_Terminate(void) {
-    unloadLibraries();
+    // Do NOT call unloadLibraries() — it crashes, and the engine cannot be
+    // re-initialised in the same process anyway. Process teardown frees the rest.
     if (g_outbuf) { free(g_outbuf); g_outbuf = NULL; }
     g_loadedVoiceDir[0] = 0;
     return EE_OK;

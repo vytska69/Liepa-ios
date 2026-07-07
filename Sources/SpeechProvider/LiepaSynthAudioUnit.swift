@@ -78,12 +78,24 @@ public final class LiepaSynthAudioUnit: AVSpeechSynthesisProviderAudioUnit {
                 text = name
             }
         }
-        let (greitis, tonas) = Self.prosody(fromSSML: ssml)
+        let (desired, tonas) = Self.prosody(fromSSML: ssml)
+        // The engine floors at greitis 30. For anything faster (the top of
+        // VoiceOver's rate slider), keep the engine at 30 and time-compress the
+        // rest with SOLA — the engine stays byte-identical.
+        var greitis = desired
+        var olaFactor = 1.0
+        if desired < 30 {
+            olaFactor = 30.0 / Double(max(desired, 1))
+            greitis = 30
+        }
 
         do {
-            try ensureEngine()
-            let pcm = try engine!.synthesize(text, voice: voice, greitis: greitis, tonas: tonas, modes: modes)
-            let floats = pcm.samples.map { Float32($0) / 32767.0 }
+            try ensureEngine(for: voice)
+            let pcm = try engine!.synthesize(text, greitis: greitis, tonas: tonas, modes: modes)
+            let samples = olaFactor > 1.0001
+                ? Self.timeCompress(pcm.samples, factor: olaFactor) : pcm.samples
+            let volume = Self.volumeFactor(fromSSML: ssml)
+            let floats = samples.map { max(-1, min(1, Float32($0) / 32767.0 * volume)) }
             mutex.wait()
             output = floats
             outputOffset = 0
@@ -126,13 +138,68 @@ public final class LiepaSynthAudioUnit: AVSpeechSynthesisProviderAudioUnit {
 
     // MARK: Helpers
 
-    private func ensureEngine() throws {
-        guard engine == nil else { return }
+    private func ensureEngine(for voice: LiepaVoice) throws {
+        if let engine = engine {
+            if engine.loadedVoice == voice { return }
+            // The LithUSS engine can load only one voice per process and cannot
+            // switch (initLUSS crashes on re-init). Relaunch so the next request
+            // loads the newly selected voice.
+            exit(0)
+        }
         guard let path = VoiceManager.dataParentPath() else {
             throw NSError(domain: "Liepa", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "liepa-data not found"])
         }
-        engine = try LiepaSynth(dataParentPath: path)
+        engine = try LiepaSynth(dataParentPath: path, voice: voice)
+    }
+
+    /// Time-compress (speed up) mono 16-bit PCM by `factor` (>1 = faster) using
+    /// SOLA — synchronized overlap-add — which shortens duration while keeping
+    /// pitch. Extends speech rate beyond the engine's own greitis=30 floor.
+    static func timeCompress(_ input: [Int16], factor: Double) -> [Int16] {
+        guard factor > 1.0001, input.count > 4096 else { return input }
+        let x = input.map { Float($0) }
+        let n = x.count
+        let blockLen = 512                                  // ~23 ms @ 22050 Hz
+        let overlap = 256                                   // 50 % overlap / synthesis hop
+        let analysisHop = Int((Double(overlap) * factor).rounded())
+        let kMax = 128                                      // ± alignment search
+
+        var y = [Float]()
+        y.reserveCapacity(Int(Double(n) / factor) + blockLen)
+        y.append(contentsOf: x[0..<blockLen])
+
+        var m = 1
+        while true {
+            let analysis = m * analysisHop
+            if analysis + kMax + blockLen > n { break }
+            let ovStart = y.count - overlap
+
+            // Pick the shift that best aligns the incoming block with the tail.
+            var bestK = 0
+            var bestCorr = -Float.greatestFiniteMagnitude
+            var k = max(-kMax, -analysis)
+            while k <= kMax {
+                var corr: Float = 0
+                var i = 0
+                while i < overlap {
+                    corr += y[ovStart + i] * x[analysis + k + i]
+                    i += 2
+                }
+                if corr > bestCorr { bestCorr = corr; bestK = k }
+                k += 1
+            }
+            let src = analysis + bestK
+
+            // Linear crossfade over the overlap, then append the block remainder.
+            for i in 0..<overlap {
+                let w = Float(i) / Float(overlap)
+                y[ovStart + i] = y[ovStart + i] * (1 - w) + x[src + i] * w
+            }
+            y.append(contentsOf: x[(src + overlap)..<(src + blockLen)])
+            m += 1
+        }
+        return y.map { Int16(max(-32768, min(32767, $0.rounded()))) }
     }
 
     private static func voice(for identifier: String) -> LiepaVoice {
@@ -156,7 +223,7 @@ public final class LiepaSynthAudioUnit: AVSpeechSynthesisProviderAudioUnit {
     }
 
     /// Extract VoiceOver's prosody from the request SSML and map it to the
-    /// engine's `greitis` (30…300, 100 = normal, higher = slower) and `tonas`
+    /// engine's `greitis` (15…300, 100 = normal, higher = slower) and `tonas`
     /// (100 = normal, higher = higher). `<prosody rate="N%" pitch="N%">` 100% = neutral.
     static func prosody(fromSSML ssml: String) -> (greitis: Int32, tonas: Int32) {
         // Returns a value normalised so that 100 == "neutral", regardless of
@@ -176,15 +243,50 @@ public final class LiepaSynthAudioUnit: AVSpeechSynthesisProviderAudioUnit {
             return v < 10 ? v * 100 : v               // "1.1" -> 110, "110" -> 110
         }
         // `greitis` is a *lengthening* percentage (100 = normal, higher = slower);
-        // the system's prosody rate is the opposite, so map inversely: greitis = 10000/rate%.
+        // the system's prosody rate is the opposite, so map inversely.
+        // Faithful up to normal (rate 100% → greitis 100). Above normal, ramp
+        // harder (power curve) so the top of VoiceOver's rate slider asks for a
+        // "desired" greitis down to ~10 (~3× faster). The engine itself floors at
+        // 30; the caller time-compresses the sub-30 remainder with SOLA. Slow
+        // half unchanged.
         let pr = max(neutral100("rate") ?? 100, 1)
-        let greitis = Int32(min(max(10000.0 / pr, 30), 300))   // 100→100, 200→50(faster), 50→200(slower)
+        let g = pr <= 100 ? 10000.0 / pr : 100.0 * pow(100.0 / pr, 1.7)
+        let greitis = Int32(min(max(g, 10), 300))              // 100→100, 200→31, 400→10(clamp)
         // `tonas` maps directly from pitch% (higher = higher pitch).
         let tonas = Int32(min(max(neutral100("pitch") ?? 100, 50), 300))
         return (greitis, tonas)
     }
 
-    /// Minimal SSML → plain text: drop tags, decode the common entities.
+    /// VoiceOver's speech volume from `<prosody volume="…">` as a 0…1 gain
+    /// (the engine has no volume control, so we scale the samples ourselves).
+    static func volumeFactor(fromSSML ssml: String) -> Float {
+        guard let r = ssml.range(of: "volume=\"", options: .caseInsensitive) else { return 1 }
+        let tail = ssml[r.upperBound...]
+        guard let end = tail.firstIndex(of: "\"") else { return 1 }
+        let raw = String(tail[tail.startIndex..<end]).trimmingCharacters(in: .whitespaces)
+        let low = raw.lowercased()
+        switch low {
+        case "silent":         return 0
+        case "x-soft":         return 0.3
+        case "soft":           return 0.55
+        case "medium":         return 0.75
+        case "loud", "x-loud": return 1
+        default: break
+        }
+        // VoiceOver expresses volume in decibels, e.g. volume="-3.741733dB"
+        // (0 dB = full, negative = quieter). Convert to a linear amplitude gain.
+        if low.hasSuffix("db") {
+            let num = low.dropLast(2).trimmingCharacters(in: .whitespaces)
+            guard let db = Float(num) else { return 1 }
+            return min(max(pow(10, db / 20), 0), 1)
+        }
+        let relative = raw.hasPrefix("+") || raw.hasPrefix("-")
+        let pctStr = raw.replacingOccurrences(of: "%", with: "")
+        guard let v = Float(pctStr) else { return 1 }
+        let pct = relative ? 100 + v : (v <= 1 ? v * 100 : v)   // "0.5"→50, "50"→50, "+10"→110
+        return min(max(pct / 100, 0), 1)
+    }
+
     /// Lithuanian names for single symbols the LithUSS engine cannot voice on its
     /// own (used only for VoiceOver character feedback). Everything the engine can
     /// name is left to the engine.
@@ -201,11 +303,18 @@ public final class LiepaSynthAudioUnit: AVSpeechSynthesisProviderAudioUnit {
     ]
 
     static func plainText(fromSSML ssml: String) -> String {
-        var s = ssml.replacingOccurrences(of: "<[^>]+>", with: "",
-                                          options: .regularExpression)
+        // The LithUSS engine cannot parse SSML, so preserve the separation the
+        // tags express: <break> → a phrase pause, any other tag → a word
+        // boundary. Otherwise VoiceOver's "s<break/>sierra" (letter + phonetic)
+        // would merge into "ssierra". (eSpeak avoids this by parsing SSML itself.)
+        var s = ssml.replacingOccurrences(of: "<break[^>]*>", with: "\n",
+                                          options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
         let entities = ["&amp;": "&", "&lt;": "<", "&gt;": ">",
                         "&quot;": "\"", "&apos;": "'", "&#39;": "'"]
         for (k, v) in entities { s = s.replacingOccurrences(of: k, with: v) }
+        // Collapse runs of spaces/tabs but keep newlines (phrase boundaries).
+        s = s.replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
