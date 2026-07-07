@@ -13,6 +13,7 @@ build/
 build-device/
 build-mac/
 build-rel/
+build-archive/
 *.xcscmblueprint
 *.xcuserstate
 .claude/
