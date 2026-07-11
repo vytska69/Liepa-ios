@@ -62,6 +62,11 @@ public final class LiepaSynthAudioUnit: AVSpeechSynthesisProviderAudioUnit {
     public override func synthesizeSpeechRequest(_ request: AVSpeechSynthesisProviderRequest) {
         let ssml = request.ssmlRepresentation
         var text = Self.plainText(fromSSML: ssml)
+        // VoiceOver announces a capital as "didžioji raidė: X"; the colon in that
+        // fixed phrase must not be spoken as "dvitaškis" (typing a real colon still
+        // is, since that arrives as a lone ":").
+        text = text.replacingOccurrences(of: "raidė\\s*:", with: "raidė",
+                                         options: [.regularExpression, .caseInsensitive])
         var voice = Self.voice(for: request.voice.identifier)
         if !VoiceManager.isInstalled(voice) {
             voice = VoiceManager.installedVoices().first ?? voice

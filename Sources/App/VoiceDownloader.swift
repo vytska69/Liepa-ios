@@ -29,6 +29,7 @@ final class VoiceDownloader: NSObject, ObservableObject {
     enum State: Equatable {
         case idle
         case downloading(Double)
+        case paused(Double)
         case extracting
         case failed(String)
     }
@@ -46,6 +47,10 @@ final class VoiceDownloader: NSObject, ObservableObject {
     private static let sessionID = "lt.liepa.tts.voicedownload"
 
     private var session: URLSession!
+
+    /// Resume data + task description ("<Name>|<quality>") kept while a download
+    /// is paused, so it can be resumed where it left off.
+    private var resumeInfo: [LiepaVoice: (data: Data, desc: String)] = [:]
 
     private override init() {
         super.init()
@@ -145,7 +150,40 @@ final class VoiceDownloader: NSObject, ObservableObject {
         session.getAllTasks { tasks in
             for t in tasks where Self.voice(fromTaskDescription: t.taskDescription) == voice { t.cancel() }
         }
+        resumeInfo[voice] = nil
         states[voice] = .idle
+    }
+
+    /// Pause an in-flight download, keeping resume data so it can continue later.
+    func pause(_ voice: LiepaVoice) {
+        let progress: Double = { if case .downloading(let p) = states[voice] { return p } else { return 0 } }()
+        session.getAllTasks { tasks in
+            guard let task = tasks.first(where: {
+                Self.voice(fromTaskDescription: $0.taskDescription) == voice
+            }) as? URLSessionDownloadTask else {
+                Task { @MainActor in self.states[voice] = .paused(progress) }
+                return
+            }
+            let desc = task.taskDescription ?? "\(voice.folderName)|"
+            task.cancel(byProducingResumeData: { data in
+                Task { @MainActor in
+                    if let data { self.resumeInfo[voice] = (data, desc) }
+                    self.states[voice] = .paused(progress)
+                }
+            })
+        }
+    }
+
+    /// Resume a paused download from where it stopped (or restart if the server
+    /// couldn't produce resume data).
+    func resume(_ voice: LiepaVoice) {
+        let progress: Double = { if case .paused(let p) = states[voice] { return p } else { return 0 } }()
+        guard let info = resumeInfo[voice] else { return }
+        resumeInfo[voice] = nil
+        let task = session.downloadTask(withResumeData: info.data)
+        task.taskDescription = info.desc
+        states[voice] = .downloading(progress)
+        task.resume()
     }
 
     func setDefault(_ voice: LiepaVoice, quality: Int) {

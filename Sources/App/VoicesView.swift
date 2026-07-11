@@ -39,33 +39,31 @@ struct VoicesView: View {
         let def = downloader.defaultQuality(voice)
         let state = downloader.states[voice] ?? .idle
 
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(voice.displayName).font(.headline)
-                Spacer()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(voice.displayName).font(.headline)
+                    Text(installedSummary(qs, def)).font(.footnote).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(voice.displayName). \(installedSummary(qs, def))")
+                // Default quality is chosen in the (now accessible) menu — a single
+                // radio list — so the rotor only carries delete actions.
+                .accessibilityActions {
+                    if qs.count == 1, let only = qs.first {
+                        Button("Ištrinti balsą") { downloader.delete(voice, quality: only) }
+                    } else {
+                        ForEach(qs, id: \.self) { q in
+                            Button("Ištrinti: \(qLabel(q))") { downloader.delete(voice, quality: q) }
+                        }
+                    }
+                }
                 if qs.count > 1 || qs.first != def {
-                    installedMenu(voice, qs, def).accessibilityHidden(true)
+                    installedMenu(voice, qs, def)
                 }
             }
-            Text(installedSummary(qs, def)).font(.footnote).foregroundStyle(.secondary)
             inlineProgress(state)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(voice.displayName). \(installedSummary(qs, def))")
-        .accessibilityValue(progressA11y(state))
-        .accessibilityActions {
-            ForEach(qs, id: \.self) { q in
-                if q != def {
-                    Button("Numatyta kokybė: \(qLabel(q))") { downloader.setDefault(voice, quality: q) }
-                }
-            }
-            if qs.count == 1, let only = qs.first {
-                Button("Ištrinti balsą") { downloader.delete(voice, quality: only) }
-            } else {
-                ForEach(qs, id: \.self) { q in
-                    Button("Ištrinti: \(qLabel(q))") { downloader.delete(voice, quality: q) }
-                }
-            }
         }
     }
 
@@ -90,6 +88,7 @@ struct VoicesView: View {
         } label: {
             Image(systemName: "ellipsis.circle")
         }
+        .accessibilityLabel("Parinktys: \(voice.displayName)")
     }
 
     // MARK: Server (all voices)
@@ -119,26 +118,27 @@ struct VoicesView: View {
         let installed = Set(downloader.installedQualities(voice))
         let state = downloader.states[voice] ?? .idle
 
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(voice.displayName).font(.headline)
-                Spacer()
-                serverMenu(voice, vars, installed).accessibilityHidden(true)
-            }
-            Text(serverSummary(vars, installed)).font(.footnote).foregroundStyle(.secondary)
-            inlineProgress(state, cancellable: voice)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(voice.displayName). \(serverSummary(vars, installed))")
-        .accessibilityValue(progressA11y(state))
-        .accessibilityActions {
-            ForEach(vars) { v in
-                if !installed.contains(v.quality) {
-                    Button("Atsisiųsti: \(qLabel(v.quality))\(v.sizeText.isEmpty ? "" : ", \(v.sizeText)")") {
-                        downloader.download(v)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(voice.displayName).font(.headline)
+                    Text(serverSummary(vars, installed)).font(.footnote).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(voice.displayName). \(serverSummary(vars, installed))")
+                .accessibilityActions {
+                    ForEach(vars) { v in
+                        if !installed.contains(v.quality) {
+                            Button("Atsisiųsti: \(qLabel(v.quality))\(v.sizeText.isEmpty ? "" : ", \(v.sizeText)")") {
+                                downloader.download(v)
+                            }
+                        }
                     }
                 }
+                serverMenu(voice, vars, installed)
             }
+            inlineProgress(state, cancellable: voice)
         }
     }
 
@@ -156,6 +156,7 @@ struct VoicesView: View {
         } label: {
             Image(systemName: "arrow.down.circle")
         }
+        .accessibilityLabel("Atsisiuntimo parinktys: \(voice.displayName)")
     }
 
     // MARK: shared bits
@@ -166,7 +167,26 @@ struct VoicesView: View {
         case .downloading(let p):
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: p) { Text("Atsisiunčiama… \(Int(p * 100))%").font(.footnote) }
-                if let voice { Button("Atšaukti") { downloader.cancel(voice) }.font(.footnote) }
+                if let voice {
+                    HStack(spacing: 16) {
+                        Button("Pristabdyti") { downloader.pause(voice) }
+                        Button("Atšaukti") { downloader.cancel(voice) }
+                    }
+                    .font(.footnote)
+                    .buttonStyle(.borderless)
+                }
+            }
+        case .paused(let p):
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: p) { Text("Pristabdyta… \(Int(p * 100))%").font(.footnote) }
+                if let voice {
+                    HStack(spacing: 16) {
+                        Button("Tęsti") { downloader.resume(voice) }
+                        Button("Atšaukti") { downloader.cancel(voice) }
+                    }
+                    .font(.footnote)
+                    .buttonStyle(.borderless)
+                }
             }
         case .extracting:
             HStack { ProgressView(); Text("Skleidžiama…").font(.footnote).foregroundStyle(.secondary) }
@@ -187,15 +207,6 @@ struct VoicesView: View {
         let available = vars.map { $0.quality }.filter { !installed.contains($0) }
         if available.isEmpty { return "visos kokybės įdiegtos" }
         return "Galima atsisiųsti: " + available.map { qLabel($0) }.joined(separator: ", ")
-    }
-
-    private func progressA11y(_ state: VoiceDownloader.State) -> String {
-        switch state {
-        case .downloading(let p): return "atsisiunčiama, \(Int(p * 100)) procentų"
-        case .extracting:         return "skleidžiama"
-        case .failed(let m):      return "klaida: \(m)"
-        case .idle:               return ""
-        }
     }
 
     private func qLabel(_ q: Int) -> String {
