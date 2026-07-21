@@ -158,7 +158,30 @@ public enum VoiceManager {
             }
         }
         for v in LiepaVoice.allCases { migrateLegacy(v) }
+        // Voice data must be readable at the lock screen *before the first
+        // unlock* (e.g. VoiceOver right after a reboot). iOS's default file
+        // protection hides files until first unlock, so mark all voice data as
+        // unprotected. Runs on every launch, so it also migrates voices already
+        // installed under 1.0.
+        applyDataProtectionNone()
         return true
+    }
+
+    /// Recursively set `FileProtectionType.none` on everything under
+    /// `liepa-data`, so the Speech extension can read the voice bases before the
+    /// device's first unlock after a reboot (Before First Unlock state).
+    public static func applyDataProtectionNone() {
+        guard let root = sharedDataDir, fm.fileExists(atPath: root.path) else { return }
+        setProtectionNone(at: root)
+        guard let en = fm.enumerator(at: root, includingPropertiesForKeys: nil) else { return }
+        for case let url as URL in en { setProtectionNone(at: url) }
+    }
+
+    private static func setProtectionNone(at url: URL) {
+        // Skip symlinks (the voice link) — the real target is handled separately.
+        if (try? fm.destinationOfSymbolicLink(atPath: url.path)) != nil { return }
+        try? fm.setAttributes([.protectionKey: FileProtectionType.none],
+                              ofItemAtPath: url.path)
     }
 
     /// Convert a legacy real-dir `<Name>/` install into `<Name><q>/` + symlink.

@@ -227,6 +227,9 @@ final class VoiceDownloader: NSObject, ObservableObject {
         try? fm.removeItem(at: dest)
         try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.moveItem(at: srcDir, to: dest)
+        // Make the new voice readable before first unlock (lock screen after a
+        // reboot), matching how the app group data is otherwise protected.
+        VoiceManager.applyDataProtectionNone()
     }
 
     nonisolated private static func findFile(named name: String, under dir: URL, fm: FileManager) -> URL? {
